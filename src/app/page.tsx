@@ -1,6 +1,3 @@
-
 export default function Home() {
-  return (
-    <div className="">Search Page</div>
-  );
+  return <div className="">Search Page</div>;
 }
