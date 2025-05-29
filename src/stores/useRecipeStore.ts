@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { Recipe, SearchedRecipe, SearchParams } from '@/shared/types';
 import { recipeApi } from '@/api/api';
 
+type CachedItem<T> = {
+  data: T;
+  timestamp: number;
+};
+
 type State = {
   currentPage: string;
   recipes: SearchedRecipe[];
@@ -9,6 +14,8 @@ type State = {
   searchParams: SearchParams;
   loading: boolean;
   error: boolean;
+  recipesCache: Record<string, CachedItem<SearchedRecipe[]>>;
+  recipeDetailsCache: Record<number, CachedItem<Recipe>>;
 };
 
 type Actions = {
@@ -18,6 +25,8 @@ type Actions = {
   handleRetry: () => void;
 };
 
+const CACHE_TTL = 60 * 1000; // 1 минута
+
 export const useRecipeStore = create<State & Actions>((set, get) => ({
   currentPage: 'home',
   recipes: [],
@@ -25,6 +34,8 @@ export const useRecipeStore = create<State & Actions>((set, get) => ({
   searchParams: {},
   loading: false,
   error: false,
+  recipesCache: {},
+  recipeDetailsCache: {},
 
   setCurrentPage: page => {
     set({ currentPage: page });
@@ -41,9 +52,25 @@ export const useRecipeStore = create<State & Actions>((set, get) => ({
   searchRecipes: async (params: SearchParams) => {
     set({ loading: true, error: false, searchParams: params });
 
+    const cacheKey = JSON.stringify(params);
+    const { recipesCache } = get();
+    const cached = recipesCache[cacheKey];
+    const now = Date.now();
+
+    if (cached && now - cached.timestamp < CACHE_TTL) {
+      set({ recipes: cached.data, loading: false });
+      return;
+    }
+
     try {
       const data = await recipeApi.getRecipes(params);
-      set({ recipes: data.results });
+      set(state => ({
+        recipes: data.results,
+        recipesCache: {
+          ...state.recipesCache,
+          [cacheKey]: { data: data.results, timestamp: now },
+        },
+      }));
     } catch {
       set({ error: true });
     } finally {
@@ -54,15 +81,24 @@ export const useRecipeStore = create<State & Actions>((set, get) => ({
   loadRecipeDetails: async id => {
     set({ loading: true, currentPage: 'details' });
 
+    const { recipeDetailsCache } = get();
+    const cached = recipeDetailsCache[id];
+    const now = Date.now();
+
+    if (cached && now - cached.timestamp < CACHE_TTL) {
+      set({ selectedRecipe: cached.data, loading: false });
+      return;
+    }
+
     try {
-      const { recipes } = get();
-      const selectedRecipe = recipes.find(recipe => recipe.id === id);
-
-      if (selectedRecipe) {
-        const data = await recipeApi.getRecipe(id);
-
-        set({ selectedRecipe: data });
-      }
+      const data = await recipeApi.getRecipe(id);
+      set(state => ({
+        selectedRecipe: data,
+        recipeDetailsCache: {
+          ...state.recipeDetailsCache,
+          [id]: { data, timestamp: now },
+        },
+      }));
     } catch (err) {
       console.error('Ошибка загрузки рецепта:', err);
     } finally {
