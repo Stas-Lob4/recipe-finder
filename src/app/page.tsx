@@ -1,3 +1,5 @@
-export default function Home() {
-  return <div className="">Search Page</div>;
+import { SearchForm } from '@/components';
+
+export default function SearchPage() {
+  return <SearchForm />;
 }
